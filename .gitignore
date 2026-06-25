@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+venv/
+.venv/
+
+# macOS
+.DS_Store
+
+# Generated outputs (created fresh each run)
+BCA_Runs/
+Correct_runs/
+*_results.xlsx
+*_results_standard_curve.png
+*_standard_curve.png
+*_converted.csv
+
+# Secrets / env
+.env
+*.env
