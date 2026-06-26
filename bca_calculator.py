@@ -567,9 +567,9 @@ def compute_blank_corrected(
                 "concentration_ug_mL": std["concentration"],
                 "wells": ", ".join(std["wells"]),
                 "n_replicates": len(vals),
-                "raw_absorbance_avg": round(raw_avg, 5),
-                "blank_corrected_abs": round(corrected, 5),
-                "cv_pct": round(cv, 2),
+                "raw_absorbance_avg": raw_avg,       # full float64; formatted at display/export only
+                "blank_corrected_abs": corrected,    # used in linregress — rounding here degraded fit
+                "cv_pct": round(cv, 2),              # display-only stat, 2 dp is sufficient
             }
         )
 
@@ -592,8 +592,8 @@ def compute_blank_corrected(
                 "wells": ", ".join(unk["wells"]),
                 "n_replicates": len(vals),
                 "dilution_factor": unk["dilution"],
-                "raw_absorbance_avg": round(raw_avg, 5),
-                "blank_corrected_abs": round(corrected, 5),
+                "raw_absorbance_avg": raw_avg,       # full float64; formatted at display/export only
+                "blank_corrected_abs": corrected,    # used to compute concentration — keep full precision
                 "cv_pct": round(cv, 2),
             }
         )
@@ -674,8 +674,8 @@ def calculate_concentrations(
 
         final = ciw / row["dilution_factor"] if not np.isnan(ciw) else np.nan
 
-        conc_in_well_col.append(round(ciw,   3) if not np.isnan(ciw)   else np.nan)
-        final_conc_col.append(  round(final, 3) if not np.isnan(final) else np.nan)
+        conc_in_well_col.append(ciw   if not np.isnan(ciw)   else np.nan)   # full precision; used as neat_conc in WB loading
+        final_conc_col.append(  final if not np.isnan(final) else np.nan)   # full precision
 
         # ── QC flags ─────────────────────────────────────────────────────
         flags: list[str] = []
@@ -800,12 +800,12 @@ def calculate_western_loading(
 
         rows.append({
             "sample_name":                 row["sample_name"],
-            "neat_conc_ug_mL":             round(float(neat_conc), 3) if pd.notna(neat_conc) else np.nan,
-            "conc_in_sample_buffer_ug_mL": round(float(buf_conc), 3)  if pd.notna(buf_conc)  else np.nan,
+            "neat_conc_ug_mL":             float(neat_conc) if pd.notna(neat_conc) else np.nan,           # full precision
+            "conc_in_sample_buffer_ug_mL": float(buf_conc)  if pd.notna(buf_conc)  else np.nan,           # full precision
             "target_ug":                   target_ug,
-            "lysate_vol_uL":               round(lysate_vol, 2)        if not np.isnan(lysate_vol)        else np.nan,
-            "sample_buffer_vol_uL":        round(sample_buffer_vol, 2) if not np.isnan(sample_buffer_vol) else np.nan,
-            "total_load_vol_uL":           round(total_vol, 2)         if not np.isnan(total_vol)         else np.nan,
+            "lysate_vol_uL":               lysate_vol        if not np.isnan(lysate_vol)        else np.nan,  # full precision
+            "sample_buffer_vol_uL":        sample_buffer_vol if not np.isnan(sample_buffer_vol) else np.nan,  # full precision
+            "total_load_vol_uL":           total_vol         if not np.isnan(total_vol)         else np.nan,  # full precision
             "wb_flags":                    "; ".join(flags) if flags else "OK",
         })
 
@@ -946,6 +946,7 @@ _HDR_FONT  = Font(color="FFFFFF", bold=True)
 _WARN_FILL = PatternFill("solid", fgColor="FFD166")
 _FLAG_FILL = PatternFill("solid", fgColor="FFBABA")
 _OK_FILL   = PatternFill("solid", fgColor="C8F5C8")
+_NUM_FMT   = "0.000000000"   # 9 decimal places for all numeric data cells in export
 
 
 def _header_row(ws, row_num: int, headers: list[str]) -> None:
@@ -958,12 +959,14 @@ def _header_row(ws, row_num: int, headers: list[str]) -> None:
     ws.row_dimensions[row_num].height = 36
 
 
-def _data_cell(ws, row: int, col: int, value, flag: bool = False) -> None:
+def _data_cell(ws, row: int, col: int, value, flag: bool = False, num_format: str = None) -> None:
     cell = ws.cell(row=row, column=col, value=value)
     cell.border    = _THIN
     cell.alignment = Alignment(horizontal="center", vertical="center")
     if flag:
         cell.fill = _FLAG_FILL
+    if num_format and isinstance(value, float) and not np.isnan(value):
+        cell.number_format = num_format
 
 
 def _auto_width(ws) -> None:
@@ -1008,9 +1011,9 @@ def export_to_excel(
         sign = "+" if (not np.isnan(intercept) and intercept >= 0) else "−"
         curve_rows = [
             ("Fit mode",    "Linear regression — FORECAST direction (Conc = f(Abs))"),
-            ("Slope",       round(slope,     4) if not np.isnan(slope)     else "N/A"),
-            ("Intercept",   round(intercept, 4) if not np.isnan(intercept) else "N/A"),
-            ("R²",          round(r_squared, 6) if not np.isnan(r_squared) else "N/A"),
+            ("Slope",       slope     if not np.isnan(slope)     else "N/A"),   # full precision; cell formatted at 9 dp
+            ("Intercept",   intercept if not np.isnan(intercept) else "N/A"),   # full precision
+            ("R²",          r_squared if not np.isnan(r_squared) else "N/A"),   # full precision
             ("Equation",    f"Conc = {slope:.4f} × Adj.Abs {sign} {abs(intercept):.4f}"
                             if not np.isnan(slope) else "N/A"),
         ]
@@ -1026,7 +1029,7 @@ def export_to_excel(
     info_rows = [
         ("Input file",                    input_filename),
         ("0 µg/mL standard wells",        ", ".join(blank_wells)),
-        ("0 µg/mL std avg absorbance",    round(blank_avg, 5)),
+        ("0 µg/mL std avg absorbance",    blank_avg),   # full precision; cell formatted at 9 dp
         ("0 µg/mL std CV (%)",            round(blank_cv, 2)),
         ("",                      ""),
         ("─── Standard Curve ───",""),
@@ -1045,6 +1048,8 @@ def export_to_excel(
         lbl_cell = ws.cell(row=i, column=1, value=label)
         lbl_cell.font = Font(bold=True)
         val_cell = ws.cell(row=i, column=2, value=value)
+        if isinstance(value, float) and not np.isnan(value):
+            val_cell.number_format = _NUM_FMT
         if label == "Pierce BCA manual note":
             val_cell.alignment = Alignment(wrap_text=True, vertical="top")
             ws.row_dimensions[i].height = 60
@@ -1068,7 +1073,9 @@ def export_to_excel(
         ]
         high_cv = float(row["cv_pct"]) > cv_threshold
         for ci, val in enumerate(vals, 1):
-            _data_cell(ws_std, r, ci, val, flag=(ci == 6 and high_cv))
+            # cols 4 (raw abs) and 5 (corrected abs) carry full float precision
+            nf = _NUM_FMT if ci in (4, 5) else None
+            _data_cell(ws_std, r, ci, val, flag=(ci == 6 and high_cv), num_format=nf)
 
     _auto_width(ws_std)
 
@@ -1099,6 +1106,9 @@ def export_to_excel(
                 cell.fill = _FLAG_FILL if flagged else _OK_FILL
             elif flag_this:
                 cell.fill = _FLAG_FILL
+            # cols 5 (raw abs), 6 (corr abs), 8 (CIW), 9 (final conc) → 9 dp
+            if ci in (5, 6, 8, 9) and isinstance(val, float) and not np.isnan(val):
+                cell.number_format = _NUM_FMT
 
     _auto_width(ws_unk)
 
@@ -1189,6 +1199,9 @@ def export_to_excel(
 
                 if ci == 8:  # WB Flags column
                     cell.fill = _FLAG_FILL if flagged else _OK_FILL
+                # cols 2 (neat conc), 3 (buf conc), 5 (lysate vol), 6 (buf vol), 7 (total vol) → 9 dp
+                if ci in (2, 3, 5, 6, 7) and isinstance(val, float) and not np.isnan(val):
+                    cell.number_format = _NUM_FMT
 
         _auto_width(ws_wb)
 
