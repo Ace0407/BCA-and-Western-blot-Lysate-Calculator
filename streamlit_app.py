@@ -112,14 +112,51 @@ _init_state()
 
 # ── Callbacks ─────────────────────────────────────────────────────────────────
 
+def _pair_well(well: str) -> str | None:
+    """Return the well one row below in the same column, or None if out of bounds / fixed."""
+    col_str = well[1:]
+    row_idx = PLATE_ROWS.index(well[0])
+    if row_idx + 1 >= len(PLATE_ROWS):
+        return None
+    candidate = f"{PLATE_ROWS[row_idx + 1]}{col_str}"
+    return None if candidate in FIXED_ASSIGNMENTS else candidate
+
+
+def _is_lower_duplicate(well: str) -> bool:
+    """True when this well was auto-assigned as the lower half of a duplicate pair."""
+    col_str = well[1:]
+    row_idx = PLATE_ROWS.index(well[0])
+    if row_idx == 0:
+        return False
+    well_above = f"{PLATE_ROWS[row_idx - 1]}{col_str}"
+    if well_above in FIXED_ASSIGNMENTS:
+        return False
+    role_above = st.session_state.well_roles.get(well_above, "")
+    role_here  = st.session_state.well_roles.get(well, "")
+    return bool(role_here and role_here.startswith("unk_") and role_here == role_above)
+
+
 def _assign_well(well: str) -> None:
     if well in FIXED_ASSIGNMENTS:
-        return  # standards and blank are locked
-    active = st.session_state.get("active_role", "unk_1")
-    if st.session_state.well_roles.get(well) == active:
+        return
+    # Lower-duplicate wells are controlled only by clicking the primary (upper) well
+    if _is_lower_duplicate(well):
+        return
+
+    active   = st.session_state.get("active_role", "unk_1")
+    current  = st.session_state.well_roles.get(well, "")
+    pair     = _pair_well(well)
+
+    if current == active:
+        # Unassign primary and its auto-paired duplicate
         st.session_state.well_roles.pop(well, None)
+        if pair and st.session_state.well_roles.get(pair) == active:
+            st.session_state.well_roles.pop(pair, None)
     else:
+        # Assign primary and automatically assign the row below as its duplicate
         st.session_state.well_roles[well] = active
+        if pair:
+            st.session_state.well_roles[pair] = active
 
 
 def _add_unknown() -> None:
@@ -294,20 +331,21 @@ div[data-testid="element-container"]:has([class^="wm-"])
     color_rules = ["<style>"]
     for row in PLATE_ROWS:
         for col_num in range(1, 13):
-            well     = f"{row}{col_num}"
-            role     = st.session_state.well_roles.get(well, "")
-            color    = _role_color(role)
-            is_fixed = well in FIXED_ASSIGNMENTS
+            well          = f"{row}{col_num}"
+            role          = st.session_state.well_roles.get(well, "")
+            color         = _role_color(role)
+            is_fixed      = well in FIXED_ASSIGNMENTS
+            is_auto_pair  = (not is_fixed) and _is_lower_duplicate(well)
+            is_locked     = is_fixed or is_auto_pair
 
-            # White ring only for user-assignable wells that match the active role
+            # White ring only for primary (non-locked) wells matching the active role
             ring = (
                 "box-shadow: 0 0 0 2px white, 0 0 0 4px rgba(255,255,255,0.35) !important;"
                 "transform: scale(1.06) !important;"
-                if (role and role == active and not is_fixed)
+                if (role and role == active and not is_locked)
                 else ""
             )
-            # Fixed wells: lock pointer events and disable hover
-            lock = "pointer-events: none !important; cursor: default !important;" if is_fixed else ""
+            lock = "pointer-events: none !important; cursor: default !important;" if is_locked else ""
 
             color_rules.append(
                 f"div[data-testid='element-container']:has(.wm-{well})"
@@ -315,8 +353,7 @@ div[data-testid="element-container"]:has([class^="wm-"])
                 f" > div[data-testid='stButton'] > button"
                 f" {{ background-color: {color} !important; {ring} {lock} }}"
             )
-            if is_fixed:
-                # Suppress the global hover scale for fixed wells
+            if is_locked:
                 color_rules.append(
                     f"div[data-testid='element-container']:has(.wm-{well})"
                     f" + div[data-testid='element-container']"
@@ -423,6 +460,12 @@ if uploaded is not None:
 
 if well_data is not None:
     st.header("2 · Assign sample wells")
+    st.info(
+        "**Samples run in duplicate.** Click wells in **one row only** — "
+        "each click assigns that well and the one directly below as a duplicate pair. "
+        "Click an assigned well again to unassign both.",
+        icon="ℹ️",
+    )
 
     n_unk        = st.session_state.unk_count
     role_options = [f"unk_{i}" for i in range(1, n_unk + 1)]
@@ -437,9 +480,9 @@ if well_data is not None:
     with left_col:
         st.subheader("Active sample")
         st.caption(
-            "Select a sample, then click its wells on the plate. "
-            "Click an assigned well again to unassign it. "
-            "Standards and blank (grey-blue / yellow / teal wells) are locked."
+            "Select a sample, click wells in its **first** row. "
+            "The row below is auto-assigned as the duplicate. "
+            "Standards and blank wells are locked."
         )
 
         active_role = st.selectbox(
@@ -510,8 +553,8 @@ if well_data is not None:
         st.subheader("96-well plate")
         st.caption(
             f"Active: **{_role_label(active_role)}** · "
-            "Click to assign / unassign sample wells. "
-            "Locked wells (standards + blank) cannot be changed."
+            "Click one row of wells — the row below is auto-assigned as the duplicate. "
+            "Standards and blank wells are locked."
         )
 
         # Inject all CSS before any buttons render
