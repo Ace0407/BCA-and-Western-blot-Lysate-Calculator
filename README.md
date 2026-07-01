@@ -10,7 +10,7 @@ Available as both a **browser app** (no install required) and a **command-line t
 
 ### Open the app
 
-> **URL:** *(add your Streamlit Community Cloud URL here after deployment)*
+> **URL: https://bca-calculator.streamlit.app/
 
 No install needed. Works in Chrome, Firefox, or Safari on any computer.
 
