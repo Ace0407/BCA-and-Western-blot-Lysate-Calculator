@@ -18,7 +18,7 @@ No install needed. Works in Chrome, Firefox, or Safari on any computer.
 
 1. **Upload** your plate reader file — SoftMax Pro `.txt`, `.xls`, `.xlsx`, or `.csv` all work directly (no manual conversion needed).
 2. **Confirm the plate grid** looks correct.
-3. **Check the standards table** — pre-filled with Pierce BCA kit defaults (2000 → 25 µg/mL, triplicates A–C). Edit only if your layout differs.
+3. **Check the standards table** — pre-filled with Pierce BCA kit defaults (2000 → 0 µg/mL, triplicates A–C). Edit only if your layout differs.
 4. **Enter your unknown sample wells** — e.g. `D1 E1` for a duplicate, or add multiple rows for multiple samples.
 5. **Click Calculate**.
 6. **Download** the Excel file or the standard curve PNG.
